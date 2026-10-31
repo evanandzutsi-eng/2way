@@ -1,0 +1,31 @@
+{
+  "name": "2way",
+  "version": "1.0.0",
+  "private": true,
+  "description": "2WaY — a private social lounge for an invited circle of friends.",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "migrate": "node server/db/migrate.js",
+    "create-admin": "node scripts/create-admin.js",
+    "invite": "node scripts/invite.js",
+    "test": "node --test \"test/unit/*.test.js\"",
+    "test:integration": "node --test --test-concurrency=1 \"test/integration/*.test.js\"",
+    "check": "node scripts/check-syntax.js",
+    "size": "node scripts/size-report.js"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.0.2",
+    "express": "^5.1.0",
+    "pg": "^8.16.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.1"
+  }
+}

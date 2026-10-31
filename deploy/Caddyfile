@@ -1,0 +1,26 @@
+# Caddy terminates TLS (automatic Let's Encrypt certificates), upgrades
+# WebSockets for Socket.IO transparently, and compresses responses.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Bound request bodies at the edge as well as in the app.
+	request_body {
+		max_size 64KB
+	}
+
+	reverse_proxy app:3000 {
+		# Only Caddy's own view of the client IP is forwarded.
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	# Caddy redacts Cookie, Set-Cookie and Authorization in logs by default
+	# (log_credentials is off), so session tokens never reach log files.
+	log {
+		output stdout
+		format json
+	}
+}

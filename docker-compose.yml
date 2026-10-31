@@ -1,0 +1,94 @@
+# 2WaY production stack: Caddy (HTTPS + WebSockets) → Node app → PostgreSQL,
+# plus a nightly encrypted backup job. Only Caddy publishes ports; the
+# database is on an internal network with no route to the internet.
+#
+#   cp .env.example .env   # fill in every value
+#   docker compose up -d --build
+#   docker compose exec app node scripts/create-admin.js <your-username>
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    networks: [edge]
+
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      APP_ORIGIN: https://${DOMAIN}
+      DATABASE_URL: postgres://twoway:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/twoway
+      TRUST_PROXY: "1"
+      APP_TIMEZONE: ${APP_TIMEZONE:-Africa/Lagos}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [edge, internal]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 512m
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: twoway
+      POSTGRES_USER: twoway
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U twoway -d twoway"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    security_opt: ["no-new-privileges:true"]
+    shm_size: 128m
+
+  backup:
+    build: ./deploy/backup
+    restart: unless-stopped
+    environment:
+      PGHOST: db
+      PGUSER: twoway
+      PGDATABASE: twoway
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      BACKUP_PASSPHRASE: ${BACKUP_PASSPHRASE:?set BACKUP_PASSPHRASE}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-2}
+    entrypoint: ["/bin/sh", "/scripts/backup-loop.sh"]
+    volumes:
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [internal]
+
+networks:
+  edge: {}
+  internal:
+    internal: true
+
+volumes:
+  db_data: {}
+  caddy_data: {}
+  caddy_config: {}
